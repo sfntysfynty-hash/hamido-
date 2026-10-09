@@ -349,10 +349,16 @@ body.light .mno{
   gap: 6px !important;
   flex-shrink: 0 !important;
 }
+/* ========== إخفاء الأزرار الحساسة افتراضياً ========== */
+#menuBranches { display: none !important; }
+#btnDebug { display: none !important; }
+body.is-main #menuBranches { display: flex !important; }
+body.is-main #btnDebug { display: flex !important; }
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a1930">
 <link rel="icon" type="image/png" href="icon.png">
@@ -370,14 +376,14 @@ body.light .mno{
     <h1>نظام حميدو للمحاسبة</h1>
     <div class="sub">إعداد عمر عثمان حميدو</div>
 
-    <label>اسم المستخدم</label>
-    <input id="user_field_9821" type="text" placeholder="اسم المستخدم" style="width:100%;padding:16px;border-radius:12px;background:#0B1E38;border:1px solid #C5A46B;color:white">
-
+ <label>البريد الإلكتروني</label>
+<input id="user_field_9821" type="email" placeholder="example@gmail.com" ...>
+ 
     <label>كلمة المرور</label>
     <input id="pass_field_9821" type="password" placeholder="كلمة المرور" style="width:100%;padding:16px;border-radius:12px;background:#0B1E38;border:1px solid #C5A46B;color:white">
 
     <button class="btn-main" type="button" onclick="doLogin()">🔓 تسجيل الدخول</button>
-    <button class="btn-alt" type="button" onclick="doGuest()">👀 تصفح بدون تسجيل</button>
+<button class="btn-alt" type="button" onclick="doForgotPassword()">🔑 نسيت كلمة المرور؟</button>
     <div id="msg"></div>
   </div>
 </div>
@@ -407,6 +413,7 @@ body.light .mno{
     <button class="btn-sm" id="langBtn" type="button" onclick="toggleLanguage()">🌐 EN</button>
     <button class="btn-sm" id="themeBtn" type="button" onclick="toggleTheme()">☀️ نهاري</button>
     <button class="btn-logout" id="btnLogout" type="button" onclick="logout()">🚪 خروج</button>
+    <button class="btn-sm" id="btnLogoutAll" type="button" onclick="logoutAllDevices()" style="background:rgba(255,69,0,0.15);border-color:#ff4500;color:#ff4500">🚪🚪 خروج من كل الأجهزة</button>
   </div>
 </aside>
     <main class="content">
@@ -439,10 +446,12 @@ var firebaseConfig = {
 var firebaseReady = false;
 var firestore = null;
 var FIRESTORE_DOC = null;
+var auth = null;
 
 try {
   firebase.initializeApp(firebaseConfig);
   firestore = firebase.firestore();
+  auth = firebase.auth();
   FIRESTORE_DOC = firestore.collection('hamido').doc('main-db');
   firebaseReady = true;
   console.log('✅ Firebase initialized');
@@ -516,9 +525,8 @@ if(_langBtn) _langBtn.innerText = curLang === 'ar' ? '🌐 EN' : '🌐 AR';
 /* ================= DB ================= */
 var DB = {
   branches: [
-    { id: 1, name: "عمر حميدو", pass: "omer123", isMain: true },
-    { id: 2, name: "فرع اعزاز", pass: "azaz123", isMain: false, parentId: 1 },
-    { id: 3, name: "فرع عفرين", pass: "afrin123", isMain: false, parentId: 1 }
+    { id: 1, name: "عمر حميدو", username: "sfntysfynty", pass: "", isMain: true },
+    { id: 2, name: "خطاب PVC", username: "omerhamido55", pass: "", isMain: false, parentId: 1 }
   ],
   data: {
     1: { products: [], sales: [], returns: [], expenses: [] },
@@ -815,6 +823,13 @@ function showDebug(){
     mA(info, '🔍 تشخيص');
   }
 }
+/* ================= Firebase Auth Listener ================= */
+if(firebaseReady && auth){
+  auth.onAuthStateChanged(function(user){
+    try { onAuthChanged(user); }
+    catch(e){ console.log('❌ خطأ onAuthChanged:', e.message); }
+  });
+}
 function applyTheme(){
   var saved = 'dark';
   try { saved = localStorage.getItem('theme') || 'dark'; } catch(e){}
@@ -913,49 +928,154 @@ function doLogin(){
   var uEl = document.getElementById('user_field_9821');
   var pEl = document.getElementById('pass_field_9821');
   if(!uEl || !pEl){ al('❌ حقول الدخول مفقودة'); return; }
-  var u = String(uEl.value || '').trim().toLowerCase();
-  var p = String(pEl.value || '').trim();
 
-  var chosen = null;
-  for(var i=0; i<DB.branches.length; i++){
-    var b = DB.branches[i];
-    var uname = ((b.username || b.name || '')).toString().trim().toLowerCase();
-    if(uname === u){ chosen = b; break; }
-  }
+  var email = String(uEl.value || '').trim().toLowerCase();
+  var pass = String(pEl.value || '').trim();
 
-  if(!chosen || chosen.pass !== p){
-    al('اسم المستخدم أو كلمة المرور خطأ');
+  if(!email || !pass){ al('أدخل البريد وكلمة المرور'); return; }
+  if(!email.includes('@')){ al('أدخل بريداً صحيحاً'); return; }
+
+  al('⏳ جاري تسجيل الدخول...');
+
+  if(!firebaseReady || !auth){ al('❌ Firebase غير جاهز'); return; }
+
+  auth.signInWithEmailAndPassword(email, pass)
+    .then(function(userCred){
+      console.log('✅ تم تسجيل الدخول:', userCred.user.email);
+    })
+    .catch(function(err){
+      var msg = 'خطأ في الدخول';
+      if(err.code === 'auth/user-not-found') msg = '❌ البريد غير مسجّل';
+      else if(err.code === 'auth/wrong-password') msg = '❌ كلمة المرور خطأ';
+      else if(err.code === 'auth/invalid-email') msg = '❌ البريد غير صحيح';
+      else if(err.code === 'auth/too-many-requests') msg = '⏳ حاول لاحقاً';
+      else if(err.code === 'auth/network-request-failed') msg = '🌐 تحقق من الإنترنت';
+      else msg = '❌ ' + err.message;
+      al(msg);
+    });
+}
+
+function doForgotPassword(){
+  var uEl = document.getElementById('user_field_9821');
+  var email = uEl ? String(uEl.value || '').trim().toLowerCase() : '';
+  if(!email || !email.includes('@')){
+    al('أدخل بريدك أولاً ثم اضغط "نسيت كلمة المرور"');
     return;
   }
-
-  cb = chosen;
-  $('loginPage').style.display = 'none';
-  $('app').style.display = 'block';
-  $('sidebarUser').textContent = '👤 ' + cb.name;
-
-  if(cb.isMain){
-  $('menuBranches').classList.remove('hide');
-  var dbg = document.getElementById('btnDebug');
-  if(dbg) dbg.style.display = 'flex';   /* ← أظهر زر التشخيص */
-} else {
-  $('menuBranches').classList.add('hide');
-  var dbg = document.getElementById('btnDebug');
-  if(dbg) dbg.style.display = 'none';   /* ← أخفِ زر التشخيص */
+  if(!firebaseReady || !auth){ al('❌ Firebase غير جاهز'); return; }
+  auth.sendPasswordResetEmail(email)
+    .then(function(){
+      mA('📧 تم إرسال رابط إعادة التعيين إلى:\n' + email + '\n\nافتح بريدك واضغط الرابط.', '✅ تم الإرسال');
+    })
+    .catch(function(err){
+      al('❌ ' + err.message);
+    });
 }
 
-pg('home');
-}
 function doGuest(){
-  cb = null;
-  $('loginPage').style.display = 'none';
-  $('app').style.display = 'block';
-  $('menuBranches').classList.add('hide');
-  var dbg = document.getElementById('btnDebug');
-  if(dbg) dbg.style.display = 'none';
-  pg('home');
+  al('👀 التصفح كضيف معطّل — يجب تسجيل الدخول');
 }
-function logout(){ location.reload(); }
+function logout(){
+  mC('🚪 خروج من هذا الجهاز؟', function(){
+    if(auth){
+      auth.signOut().then(function(){
+        console.log('✅ تم تسجيل الخروج');
+      });
+    } else {
+      location.reload();
+    }
+  });
+}
 
+function logoutAllDevices(){
+  var user = auth ? auth.currentUser : null;
+  if(!user){ al('لا يوجد مستخدم مسجل'); return; }
+  mC('⚠️ سيتم تسجيل خروجك من كل الأجهزة التي دخلت بها بحسابك.\n\nهل أنت متأكد؟', function(){
+    user.getIdToken(true)
+      .then(function(){ return auth.signOut(); })
+      .then(function(){
+        alert('✅ تم تسجيل الخروج من جميع الأجهزة');
+        location.reload();
+      })
+      .catch(function(err){
+        alert('❌ خطأ: ' + err.message);
+      });
+  });
+}
+
+function onAuthChanged(user){
+  if(user){
+    /* إخفاء فوري للأزرار الحساسة */
+    var _mb = document.getElementById('menuBranches');
+    var _bd = document.getElementById('btnDebug');
+    if(_mb){ _mb.classList.add('hide'); _mb.style.display = 'none'; }
+    if(_bd){ _bd.style.display = 'none'; }
+
+    var email = (user.email || '').toLowerCase();
+
+    if(email === 'sfntysfynty@gmail.com'){
+      var mainBranch = DB.branches.filter(function(b){ return b.isMain; })[0];
+      if(!mainBranch){
+        mainBranch = { id: 1, name: 'عمر حميدو', username: 'sfntysfynty', pass: '', isMain: true };
+        DB.branches.push(mainBranch);
+        if(!DB.data[1]) DB.data[1] = { products: [], sales: [], returns: [], expenses: [], customers: [], payments: [], manualDebts: [], suppliers: [], purchases: [], supplierPayments: [] };
+      } else {
+        mainBranch.name = 'عمر حميدو';
+        mainBranch.username = 'sfntysfynty';
+      }
+      cb = mainBranch;
+      sv();
+    } else {
+      var branch = null;
+      for(var i=0; i<DB.branches.length; i++){
+        var b = DB.branches[i];
+        var bUser = (b.username || '').toLowerCase();
+        var bName = (b.name || '').toLowerCase();
+        if(bUser === email || bUser === email.split('@')[0] || bName === email || email === (bUser + '@gmail.com')){
+          branch = b;
+          break;
+        }
+      }
+      if(!branch){
+        var localPart = email.split('@')[0];
+        var nid = Date.now();
+        var main = DB.branches.filter(function(b){ return b.isMain; })[0];
+        branch = { id: nid, name: localPart, username: localPart, pass: '', isMain: false, parentId: main ? main.id : null };
+        DB.branches.push(branch);
+        DB.data[nid] = { products: [], sales: [], returns: [], expenses: [], customers: [], payments: [], manualDebts: [], suppliers: [], purchases: [], supplierPayments: [] };
+        sv();
+        console.log('🆕 تم إنشاء فرع جديد:', localPart);
+      }
+      cb = branch;
+    }
+
+    $('loginPage').style.display = 'none';
+    $('app').style.display = 'block';
+    $('sidebarUser').textContent = '👤 ' + cb.name;
+    $('sidebarUser').style.color = cb.isMain ? '#d4af37' : '#00c853';
+
+    var isReallyMain = cb && cb.isMain && email === 'sfntysfynty@gmail.com';
+    var mbEl = document.getElementById('menuBranches');
+    var bdEl = document.getElementById('btnDebug');
+
+   if(isReallyMain){
+  document.body.classList.add('is-main');
+  console.log('👑 دخل كرئيسي');
+} else {
+  document.body.classList.remove('is-main');
+  console.log('🏪 دخل كفرع: ' + cb.name);
+} 
+
+    pg('home');
+    console.log('✅ مرحباً ' + cb.name + ' | رئيسي: ' + cb.isMain);
+
+  } else {
+    cb = null;
+    document.body.classList.remove('is-main');
+    $('loginPage').style.display = 'flex';
+    $('app').style.display = 'none';
+  }
+}  
 /* تفريغ الحقول */
 setTimeout(function(){
   var u = document.getElementById('user_field_9821');
@@ -1496,44 +1616,63 @@ function addBranch(){
 
 /* ================= تعديل وحذف الفروع ================= */
 function editB(id){
-  id = Number(id);
   var b = null;
   for(var i=0; i<DB.branches.length; i++){
-    if(Number(DB.branches[i].id) === id){ b = DB.branches[i]; break; }
+    if(String(DB.branches[i].id) === String(id)){ b = DB.branches[i]; break; }
   }
   if(!b){ alert('الفرع غير موجود'); return; }
 
   var curUser = b.username || '';
-  mM('تعديل الفرع', [
+  var isMainBranch = !!b.isMain;
+  var inputs = [
     { label:'الاسم', value: b.name },
     { label:'اسم المستخدم', value: curUser },
     { label:'كلمة المرور', value: b.pass }
-  ], function(v){
+  ];
+
+  mM('تعديل الفرع', inputs, function(v){
     var nn = (v[0]||'').trim();
     var nu = (v[1]||'').trim().toLowerCase();
     var np = (v[2]||'').trim();
-    if(!nn || !np){ mA('أكمل البيانات'); return; }
 
+    if(!nn){ mA('أدخل اسم الفرع'); return; }
+
+    /* التحقق من تكرار الاسم */
     var newName = nn.toLowerCase();
     if(DB.branches.some(function(x){
-      return Number(x.id) !== id && (x.name||'').trim().toLowerCase() === newName;
+      return String(x.id) !== String(id) && (x.name||'').trim().toLowerCase() === newName;
     })){
       alert('❌ هذا الاسم موجود مسبقاً'); return;
     }
+
+    /* التحقق من تكرار اسم المستخدم */
     if(nu && DB.branches.some(function(x){
-      var other = ((x.username || x.name || '')).toString().trim().toLowerCase();
-      return Number(x.id) !== id && other === nu;
+      var other = ((x.username || '')).toString().trim().toLowerCase();
+      return String(x.id) !== String(id) && other === nu;
     })){
       alert('❌ اسم المستخدم موجود مسبقاً'); return;
     }
 
+    /* التعديل */
     b.name = nn;
     if(nu) b.username = nu;
-    b.pass = np;
+    if(np) b.pass = np;
+
     sv();
-    pg('branches');
-    mA('✅ تم التعديل');
+
+    /* إعادة رسم الصفحة الحالية */
+    var activeMenu = document.querySelector('.menu-item.active');
+    if(activeMenu){
+      var pid = activeMenu.getAttribute('data-page');
+      if(pid) pg(pid);
+    }
+
+    mA('✅ تم حفظ التعديلات\n👤 ' + b.name);
   });
+
+  /* تعديل نص الرسالة ليعرض الأسطر */
+  var mEl = document.getElementById('mMsg');
+  if(mEl) mEl.style.whiteSpace = 'pre-line';
 }
 
 function delB(id){
@@ -1918,6 +2057,7 @@ function rSL(){
         '<div class="amt">'+fm(total)+' '+cs()+'</div>'+
         '<div style="display:flex;gap:4px">'+
           '<button class="mini-del" style="background:rgba(0,120,255,0.15);border-color:rgba(0,120,255,0.4);color:#4da3ff;min-width:36px;min-height:36px;padding:4px 8px" data-print-invoice="'+invId+'" type="button">🖨️</button>'+
+          '<button class="mini-del" style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);color:#25D366;min-width:36px;min-height:36px;padding:4px 8px" data-share-invoice="'+invId+'" type="button">📤</button>'+
           '<button class="mini-del" style="background:rgba(212,175,55,0.15);border-color:rgba(212,175,55,0.4);color:#d4af37;min-width:36px;min-height:36px;padding:4px 8px" data-edit-sale="'+sid+'" type="button">✏️</button>'+
           '<button class="mini-del" style="min-width:36px;min-height:36px;padding:4px 8px" data-del-sale="'+sid+'" type="button">🗑️</button>'+
         '</div>'+
@@ -2133,7 +2273,8 @@ function rSales(pc){
     '<textarea id="saleNotes" placeholder="ملاحظات الفاتورة (تُطبق على كل الأصناف)" style="width:100%;padding:11px;background:rgba(0,0,0,0.35);border:1.5px solid rgba(212,175,55,0.3);border-radius:10px;color:#fff;font-size:14px;outline:none;resize:vertical;min-height:70px;font-family:inherit"></textarea>'+
     '<button class="btn-gold" id="btnSaveInvoice" type="button">✅ حفظ الفاتورة</button>'+
     '<button id="btnClearCart" type="button" style="width:100%;margin-top:8px;padding:10px;border-radius:12px;background:rgba(255,69,0,0.15);color:#ff4500;border:1px solid rgba(255,69,0,0.3);font-weight:700;font-size:13px">🗑️ مسح الفاتورة</button>'+
-    '<button id="btnPrint" type="button" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;background:#112240;color:white;border:1px solid #C5A46B">🖨️ طباعة آخر فاتورة</button></div>'+
+'<button id="btnPrint" type="button" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;background:#112240;color:white;border:1px solid #C5A46B">🖨️ طباعة آخر فاتورة</button>'+
+'<button id="btnShareWa" type="button" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;background:linear-gradient(135deg,#25D366,#128C7E);color:white;border:none;font-weight:900">📤 مشاركة آخر فاتورة عبر واتساب</button></div>'+
     '<div class="card"><h3>📋 المبيعات</h3>'+
     '<div style="display:flex;gap:6px;margin-bottom:10px">'+
       '<input id="searchSale" placeholder="🔍 بحث..." style="flex:1;padding:10px;background:rgba(0,0,0,0.35);border:1.5px solid rgba(212,175,55,0.3);border-radius:10px;color:#fff;font-size:13px;outline:none">'+
@@ -2147,6 +2288,8 @@ function rSales(pc){
   document.getElementById('btnClearCart').onclick = clearSaleCart;
   var bp = document.getElementById('btnPrint');
   if(bp && typeof printInvoice === 'function') bp.onclick = printInvoice;
+    var bwa = document.getElementById('btnShareWa');
+  if(bwa) bwa.onclick = function(){ shareInvoiceWhatsApp(null); };
   var sf = document.getElementById('searchSale');
   if(sf) sf.oninput = rSL;
   var sd = document.getElementById('searchDate');
@@ -2390,6 +2533,22 @@ document.addEventListener('click', function(e){
       e.preventDefault();
       try { delP(el.getAttribute('data-p')); }
       catch(err){ alert('❌ خطأ في delP: ' + err.message); }
+      return;
+    }
+    el = el.parentNode;
+  }
+});
+/* ============ تفويض زر مشاركة الفاتورة عبر واتساب ============ */
+document.addEventListener('click', function(e){
+  var el = e.target;
+  while(el && el !== document.body){
+    if(el.hasAttribute && el.hasAttribute('data-share-invoice')){
+      e.preventDefault();
+      try {
+        var invId = el.getAttribute('data-share-invoice');
+        shareInvoiceWhatsApp(invId || null);
+      }
+      catch(err){ alert('❌ خطأ في المشاركة: ' + err.message); }
       return;
     }
     el = el.parentNode;
@@ -3183,6 +3342,96 @@ if ('serviceWorker' in navigator) {
       .then(function(reg) { console.log('✅ SW Registered:', reg.scope); })
       .catch(function(err) { console.log('❌ SW Error:', err); });
   });
+}
+/* حماية دورية — كل 3 ثوانٍ */
+setInterval(function(){
+  if(!auth || !auth.currentUser) return;
+  var em = (auth.currentUser.email || '').toLowerCase();
+  if(em === 'sfntysfynty@gmail.com') return;
+  var mb = document.getElementById('menuBranches');
+  var bd = document.getElementById('btnDebug');
+  if(mb && !mb.classList.contains('hide')){ mb.classList.add('hide'); mb.style.display='none'; }
+  if(bd && bd.style.display !== 'none'){ bd.style.display = 'none'; }
+}, 3000);
+/* ================= مشاركة الفاتورة عبر واتساب ================= */
+function shareInvoiceWhatsApp(invoiceId){
+  var d = gd(); if(!d){ al('سجل دخول'); return; }
+
+  var sales = d.sales || [];
+  var items = [];
+  if(invoiceId){
+    items = sales.filter(function(s){ return s.invoiceId === invoiceId; });
+  }
+  if(!items.length){
+    /* fallback: آخر فاتورة */
+    for(var i = sales.length - 1; i >= 0; i--){
+      if(sales[i].invoiceId){
+        var lastInv = sales[i].invoiceId;
+        items = sales.filter(function(s){ return s.invoiceId === lastInv; });
+        break;
+      }
+    }
+    if(!items.length && sales.length){
+      items = [sales[sales.length-1]];
+    }
+  }
+  if(!items.length){ mA('لا توجد فاتورة للمشاركة'); return; }
+
+  var first = items[0];
+  var branchName = cb ? cb.name : 'حميدو';
+  var date = first.dateOnly || first.date || getTodayStr();
+  var payType = first.paymentType === 'credit' ? '📝 دين (آجل)' : '💵 نقدي';
+  var customer = first.customerName || '';
+  var notes = first.notes || '';
+
+  /* بناء نص الرسالة */
+  var txt = '';
+  txt += '🧾 *فاتورة جديدة*\n';
+  txt += '━━━━━━━━━━━━━━━\n';
+  txt += '🏪 الفرع: ' + branchName + '\n';
+  txt += '📅 التاريخ: ' + date + '\n';
+  txt += '💳 نوع الدفع: ' + payType + '\n';
+  if(customer) txt += '👤 العميل: ' + customer + '\n';
+  txt += '━━━━━━━━━━━━━━━\n\n';
+
+  txt += '📦 *الأصناف:*\n';
+  var total = 0;
+  items.forEach(function(item, i){
+    var qty = parseFloat(item.quantity || item.qty) || 0;
+    var price = parseFloat(item.sellPrice || item.price) || 0;
+    var itemTotal = parseFloat(item.total) || (qty * price);
+    total += itemTotal;
+    txt += (i+1) + '. ' + (item.product || item.productName || '-') + '\n';
+    txt += '   ' + qty + ' × ' + fm(price) + ' = ' + fm(itemTotal) + ' ' + cs() + '\n';
+  });
+
+  txt += '\n━━━━━━━━━━━━━━━\n';
+  txt += '💰 *الإجمالي: ' + fm(total) + ' ' + cs() + '*\n';
+  txt += '━━━━━━━━━━━━━━━\n';
+
+  if(notes) txt += '\n📝 ملاحظات: ' + notes + '\n';
+
+  txt += '\nإعداد *عمر عثمان حميدو*\n';
+  txt += 'نظام حميدو للمحاسبة';
+
+  /* فتح واتساب */
+  var encoded = encodeURIComponent(txt);
+  var waUrl = 'https://wa.me/?text=' + encoded;
+
+  try {
+    window.open(waUrl, '_blank');
+  } catch(e){
+    /* بديل: نسخ النص */
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(function(){
+        mA('✅ تم نسخ الفاتورة\nالصقها في واتساب يدوياً');
+      }).catch(function(){
+        mA('❌ تعذّر فتح واتساب');
+      });
+    } else {
+      mA('❌ تعذّر فتح واتساب');
+    }
+  }
 }
 </script>
 </body>
