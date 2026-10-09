@@ -350,6 +350,9 @@ body.light .mno{
   flex-shrink: 0 !important;
 }
 </style>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a1930">
 <link rel="icon" type="image/png" href="icon.png">
@@ -399,6 +402,8 @@ body.light .mno{
   <button class="menu-item hide" data-page="branches" id="menuBranches" data-t="branches">🏢 الفروع</button>
   <div class="sidebar-footer">
     <div class="sidebar-user" id="sidebarUser">👤 عمر حميدو</div>
+    <div id="saveIndicator" style="padding:6px;text-align:center;font-size:10px;background:rgba(0,200,83,0.1);border:1px solid #00c853;border-radius:10px;color:#00c853;margin-top:4px">☁️ متصل</div>
+    <div class="sidebar-user" id="saveIndicator" style="font-size:10px;color:#888;margin-top:4px;background:rgba(0,200,83,0.1);border-color:#00c853">✅ جاهز</div>
     <button class="btn-sm" id="langBtn" type="button" onclick="toggleLanguage()">🌐 EN</button>
     <button class="btn-sm" id="themeBtn" type="button" onclick="toggleTheme()">☀️ نهاري</button>
 <button class="btn-logout" id="btnLogout" type="button" onclick="logout()">🚪 خروج</button>
@@ -421,6 +426,29 @@ body.light .mno{
 </div>
 <script>
 /* ================= translations ================= */
+/* ================= Firebase Setup ================= */
+var firebaseConfig = {
+  apiKey: "AIzaSyBP5Q-OS1OyfDTyS7jTlACmzd8R66FW618",
+  authDomain: "hamido-accounting.firebaseapp.com",
+  projectId: "hamido-accounting",
+  storageBucket: "hamido-accounting.firebasestorage.app",
+  messagingSenderId: "360286820800",
+  appId: "1:360286820800:web:cd644fed062317982bd025"
+};
+
+var firebaseReady = false;
+var firestore = null;
+var FIRESTORE_DOC = null;
+
+try {
+  firebase.initializeApp(firebaseConfig);
+  firestore = firebase.firestore();
+  FIRESTORE_DOC = firestore.collection('hamido').doc('main-db');
+  firebaseReady = true;
+  console.log('✅ Firebase initialized');
+} catch(e) {
+  console.log('❌ Firebase error:', e.message);
+}
 var translations = {
   ar: {
     debts:'💳 الديون',
@@ -498,6 +526,51 @@ var DB = {
     3: { products: [], sales: [], returns: [], expenses: [] }
   }
 };
+/* ================= المزامنة السحابية ================= */
+if(firebaseReady && FIRESTORE_DOC){
+  FIRESTORE_DOC.onSnapshot(function(doc){
+    try {
+      if(doc.exists){
+        var cloudData = doc.data();
+        if(cloudData && cloudData.db && cloudData.db.branches){
+          var cloudTime = cloudData.lastUpdate || 0;
+          var localTime = parseInt(localStorage.getItem('hamidou_lastUpdate') || '0');
+          if(cloudTime > localTime + 500){
+            /* السحابة أحدث → حدّث المحلي */
+            DB = cloudData.db;
+            try {
+              localStorage.setItem('hamidou_v4', JSON.stringify(DB));
+              localStorage.setItem('hamidou_lastUpdate', String(cloudTime));
+            } catch(e){}
+            console.log('☁️ تم تحديث البيانات من السحابة');
+            /* إعادة رسم الصفحة الحالية */
+            var activeMenu = document.querySelector('.menu-item.active');
+            if(activeMenu && typeof pg === 'function'){
+              var pid = activeMenu.getAttribute('data-page');
+              if(pid) pg(pid);
+            }
+          }
+        }
+      } else {
+        /* أول مرة → ارفع البيانات */
+        setTimeout(function(){
+          if(DB && DB.branches && firebaseReady){
+            FIRESTORE_DOC.set({
+              db: DB,
+              lastUpdate: Date.now()
+            }).then(function(){
+              console.log('☁️ تم رفع البيانات الأولية للسحابة');
+            }).catch(function(err){
+              console.log('⚠️ خطأ رفع أولي:', err.message);
+            });
+          }
+        }, 1000);
+      }
+    } catch(e){
+      console.log('⚠️ خطأ في المزامنة:', e.message);
+    }
+  });
+}
 /* ============================================================
    حفظ قوي متعدد الطبقات — لا تفقد بياناتك أبداً
    ============================================================ */
@@ -536,6 +609,28 @@ try {
 } catch(e) {
   console.log('⚠️ خطأ في تحميل البيانات:', e.message);
 }
+/* عرض معلومات التحميل في الـ Console */
+try {
+  console.log('');
+  console.log('═══════════════════════════════');
+  console.log('🎯 نظام حميدو للمحاسبة');
+  console.log('═══════════════════════════════');
+  console.log('📊 عدد الفروع: ' + DB.branches.length);
+  DB.branches.forEach(function(b, i){
+    var d = DB.data[b.id] || {};
+    var items = (d.products||[]).length;
+    var sales = (d.sales||[]).length;
+    var custs = (d.customers||[]).length;
+    console.log('   ' + (i+1) + ') ' + b.name + ' — أصناف: ' + items + ' | مبيعات: ' + sales + ' | عملاء: ' + custs);
+  });
+  console.log('');
+  console.log('💾 المفاتيح المحفوظة:');
+  console.log('   hamidou_v4: ' + (localStorage.getItem('hamidou_v4') ? '✅ ' + localStorage.getItem('hamidou_v4').length + ' حرف' : '❌'));
+  console.log('   hamidou_backup_2: ' + (localStorage.getItem('hamidou_backup_2') ? '✅' : '❌'));
+  console.log('   hamidou_auto_backup: ' + (localStorage.getItem('hamidou_auto_backup') ? '✅' : '❌'));
+  console.log('═══════════════════════════════');
+  console.log('');
+} catch(e){}
 DB.branches.forEach(function(b){
   if(!DB.data[b.id]) DB.data[b.id] = { products: [], sales: [], returns: [], expenses: [], customers: [], payments: [], manualDebts: [], suppliers: [], purchases: [], supplierPayments: [] };
   ['products','sales','returns','expenses','customers','payments','manualDebts','suppliers','purchases','supplierPayments'].forEach(function(k){
@@ -559,7 +654,9 @@ function sv(){
   var json = '';
   try { json = JSON.stringify(DB); } catch(e){ return; }
 
-  /* حفظ في 3 أماكن لضمان الأمان */
+  var now = Date.now();
+
+  /* 1) حفظ محلي */
   try { localStorage.setItem('hamidou_v4', json); } catch(e){}
   try { localStorage.setItem('hamidou_backup_2', json); } catch(e){}
   try {
@@ -568,8 +665,34 @@ function sv(){
       data: DB
     }));
   } catch(e){}
+  try { localStorage.setItem('hamidou_lastUpdate', String(now)); } catch(e){}
 
-  /* عرض الوقت في Console للتشخيص */
+  /* 2) رفع للسحابة */
+  if(firebaseReady && FIRESTORE_DOC){
+    FIRESTORE_DOC.set({
+      db: DB,
+      lastUpdate: now
+    }).then(function(){
+      console.log('☁️ رُفع للسحابة');
+    }).catch(function(err){
+      console.log('⚠️ خطأ رفع سحابي:', err.message);
+    });
+  }
+
+  /* 3) مؤشر الحفظ */
+  try {
+    var ind = document.getElementById('saveIndicator');
+    if(ind){
+      var t = new Date();
+      var time = String(t.getHours()).padStart(2,'0') + ':' +
+                 String(t.getMinutes()).padStart(2,'0') + ':' +
+                 String(t.getSeconds()).padStart(2,'0');
+      ind.textContent = '☁️ محفوظ ' + time;
+      ind.style.background = 'rgba(0,200,83,0.15)';
+      ind.style.color = '#00c853';
+    }
+  } catch(e){}
+
   try { console.log('💾 حفظ - ' + new Date().toLocaleTimeString('ar-EG')); } catch(e){}
 }
 function fm(n){ return (parseFloat(n) || 0).toFixed(2); }
