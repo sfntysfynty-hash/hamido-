@@ -402,11 +402,11 @@ body.light .mno{
   <button class="menu-item hide" data-page="branches" id="menuBranches" data-t="branches">🏢 الفروع</button>
   <div class="sidebar-footer">
     <div class="sidebar-user" id="sidebarUser">👤 عمر حميدو</div>
+    <button class="btn-sm" id="btnDebug" type="button" onclick="showDebug()" style="display:none;background:rgba(0,120,255,0.15);border-color:#4da3ff;color:#4da3ff">🔍 تشخيص</button>
     <div id="saveIndicator" style="padding:6px;text-align:center;font-size:10px;background:rgba(0,200,83,0.1);border:1px solid #00c853;border-radius:10px;color:#00c853;margin-top:4px">☁️ متصل</div>
-    <div class="sidebar-user" id="saveIndicator" style="font-size:10px;color:#888;margin-top:4px;background:rgba(0,200,83,0.1);border-color:#00c853">✅ جاهز</div>
     <button class="btn-sm" id="langBtn" type="button" onclick="toggleLanguage()">🌐 EN</button>
     <button class="btn-sm" id="themeBtn" type="button" onclick="toggleTheme()">☀️ نهاري</button>
-<button class="btn-logout" id="btnLogout" type="button" onclick="logout()">🚪 خروج</button>
+    <button class="btn-logout" id="btnLogout" type="button" onclick="logout()">🚪 خروج</button>
   </div>
 </aside>
     <main class="content">
@@ -764,6 +764,57 @@ function safeSave(){
     localStorage.setItem('hamidou_backup_2', newJson);
   } catch(e){}
 }
+function showDebug(){
+  var info = '';
+  info += '📍 الرابط:\n' + location.href + '\n\n';
+  info += '✅ Firebase: ' + (typeof firebaseReady !== 'undefined' && firebaseReady ? 'جاهز' : 'غير جاهز') + '\n';
+  info += '✅ Firestore: ' + (typeof firestore !== 'undefined' && firestore ? 'متصل' : 'غير متصل') + '\n';
+  info += '✅ عدد الفروع: ' + (DB.branches ? DB.branches.length : 0) + '\n';
+  info += '✅ عدد الأصناف: ' + (gd() && gd().products ? gd().products.length : 0) + '\n';
+  info += '✅ عدد المبيعات: ' + (gd() && gd().sales ? gd().sales.length : 0) + '\n\n';
+  
+  info += '📊 الفروع:\n';
+  if(DB.branches){
+    DB.branches.forEach(function(b, i){
+      info += '   ' + (i+1) + ') ' + b.name + '\n';
+    });
+  }
+  
+  info += '\n💾 آخر حفظ محلي:\n';
+  var lt = localStorage.getItem('hamidou_lastUpdate');
+  info += lt ? new Date(parseInt(lt)).toLocaleString('ar-EG') : 'لا يوجد';
+  
+  info += '\n\n☁️ معلومات السحابة:\n';
+  if(typeof FIRESTORE_DOC !== 'undefined' && FIRESTORE_DOC){
+    info += 'جاري القراءة...\n\n';
+    mA(info, '🔍 تشخيص');
+    
+    setTimeout(function(){
+      FIRESTORE_DOC.get().then(function(doc){
+        var cloudInfo = '';
+        if(doc.exists){
+          var data = doc.data();
+          cloudInfo += '✅ السحابة فيها بيانات\n';
+          cloudInfo += '   - الفروع: ' + data.db.branches.length + '\n';
+          cloudInfo += '   - آخر رفع: ' + new Date(data.lastUpdate).toLocaleString('ar-EG') + '\n';
+          cloudInfo += '   - الفروع:\n';
+          data.db.branches.forEach(function(b){
+            cloudInfo += '      • ' + b.name + '\n';
+          });
+        } else {
+          cloudInfo += '❌ السحابة فارغة!\n';
+          cloudInfo += '(لم يتم رفع البيانات بعد)';
+        }
+        mA(info + cloudInfo, '🔍 تشخيص');
+      }).catch(function(err){
+        mA(info + '\n❌ خطأ في السحابة:\n' + err.message, '🔍 تشخيص');
+      });
+    }, 500);
+  } else {
+    info += '❌ Firebase غير مُهيّأ';
+    mA(info, '🔍 تشخيص');
+  }
+}
 function applyTheme(){
   var saved = 'dark';
   try { saved = localStorage.getItem('theme') || 'dark'; } catch(e){}
@@ -882,16 +933,25 @@ function doLogin(){
   $('app').style.display = 'block';
   $('sidebarUser').textContent = '👤 ' + cb.name;
 
-  if(cb.isMain) $('menuBranches').classList.remove('hide');
-  else $('menuBranches').classList.add('hide');
+  if(cb.isMain){
+  $('menuBranches').classList.remove('hide');
+  var dbg = document.getElementById('btnDebug');
+  if(dbg) dbg.style.display = 'flex';   /* ← أظهر زر التشخيص */
+} else {
+  $('menuBranches').classList.add('hide');
+  var dbg = document.getElementById('btnDebug');
+  if(dbg) dbg.style.display = 'none';   /* ← أخفِ زر التشخيص */
+}
 
-  pg('home');
+pg('home');
 }
 function doGuest(){
   cb = null;
   $('loginPage').style.display = 'none';
   $('app').style.display = 'block';
   $('menuBranches').classList.add('hide');
+  var dbg = document.getElementById('btnDebug');
+  if(dbg) dbg.style.display = 'none';
   pg('home');
 }
 function logout(){ location.reload(); }
@@ -3114,7 +3174,7 @@ var _lo = $('btnLogout'); if(_lo) _lo.onclick = logout;
     }
   } catch(e) {}
 })();
-applyTheme();
+
 
 /* ===== تسجيل Service Worker للـ PWA ===== */
 if ('serviceWorker' in navigator) {
