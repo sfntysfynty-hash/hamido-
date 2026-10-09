@@ -703,6 +703,122 @@ function sv(){
 
   try { console.log('💾 حفظ - ' + new Date().toLocaleTimeString('ar-EG')); } catch(e){}
 }
+/* ================= نظام التحديث التلقائي الذكي ================= */
+var VERSION_CHECK_INTERVAL = 60 * 1000;  /* كل دقيقة */
+var CURRENT_INDEX_HASH = null;  /* بصمة الملف الحالي */
+
+/* حساب بصمة نصية (hash) بسيطة */
+function hashCode(str){
+  var hash = 0;
+  if(!str) return hash;
+  for(var i = 0; i < str.length; i++){
+    var char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; /* تحويل إلى 32-bit integer */
+  }
+  return String(hash);
+}
+
+/* جلب بصمة ملف index.html من السيرفر */
+function fetchIndexHash(){
+  return fetch('index.html?t=' + Date.now() + '&r=' + Math.random(), {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache' }
+  })
+    .then(function(res){
+      if(!res.ok) throw new Error('fetch failed');
+      return res.text();
+    })
+    .then(function(html){
+      return hashCode(html);
+    });
+}
+
+/* فحص التحديث */
+function checkForAppUpdate(){
+  fetchIndexHash()
+    .then(function(serverHash){
+      if(CURRENT_INDEX_HASH === null){
+        /* أول مرة → احفظ البصمة الحالية */
+        CURRENT_INDEX_HASH = serverHash;
+        try { localStorage.setItem('hamidou_index_hash', serverHash); } catch(e){}
+        return;
+      }
+      /* مقارنة */
+      if(serverHash !== CURRENT_INDEX_HASH){
+        console.log('🆕 تحديث جديد مكتشف!');
+        showUpdateBanner(serverHash);
+      }
+    })
+    .catch(function(err){
+      /* تجاهل الأخطاء */
+    });
+}
+
+/* عند بدء التطبيق — احفظ البصمة الحالية */
+(function initIndexHash(){
+  try {
+    var savedHash = localStorage.getItem('hamidou_index_hash');
+    if(savedHash) CURRENT_INDEX_HASH = savedHash;
+  } catch(e){}
+})();
+
+
+function showUpdateBanner(newHash){
+  if(window._updateBannerShown) return;
+  window._updateBannerShown = true;
+
+  var banner = document.createElement('div');
+  banner.id = 'updateBanner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#25D366,#128C7E);color:#fff;padding:16px;text-align:center;z-index:999999;font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-family:inherit;line-height:1.6;';
+  banner.innerHTML = '🆕 يوجد تحديث جديد للتطبيق<br><span style="font-size:12px;font-weight:700;opacity:0.9">اضغط هنا للتحديث الفوري — بياناتك محفوظة</span>';
+  banner.onclick = function(){
+    banner.innerHTML = '⏳ جاري التحديث... لا تغلق التطبيق';
+    banner.style.background = '#0f6d5f';
+
+    /* 1) احفظ كل شيء */
+    try { sv(); } catch(e){}
+    try {
+      if(DB && DB.branches){
+        localStorage.setItem('hamidou_v4', JSON.stringify(DB));
+        localStorage.setItem('hamidou_backup_2', JSON.stringify(DB));
+      }
+    } catch(e){}
+
+    /* 2) أعد التحميل بعد ثانية */
+    setTimeout(function(){
+      try {
+        /* احذف الكاش */
+        if('caches' in window){
+          caches.keys().then(function(names){
+            names.forEach(function(name){ caches.delete(name); });
+          });
+        }
+        /* احذف service worker */
+        if('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations){
+          navigator.serviceWorker.getRegistrations().then(function(regs){
+            regs.forEach(function(r){ r.unregister(); });
+            setTimeout(function(){
+              location.reload();
+            }, 500);
+          });
+        } else {
+          location.reload();
+        }
+      } catch(e){
+        location.reload();
+      }
+    }, 1000);
+  };
+  document.body.appendChild(banner);
+}
+
+/* فحص أول عند التحميل بعد 10 ثوانٍ */
+setTimeout(checkForAppUpdate, 10000);
+
+/* فحص دوري كل دقيقة */
+setInterval(checkForAppUpdate, VERSION_CHECK_INTERVAL);
+
 function fm(n){ return (parseFloat(n) || 0).toFixed(2); }
 function cs(){ return CUR === 'SYP' ? 'ل.س' : CUR; }
 function al(m){
@@ -752,6 +868,10 @@ document.addEventListener('visibilitychange', function(){
         localStorage.setItem('hamidou_backup_2', JSON.stringify(DB));
       }
     } catch(e){}
+  } else {
+    if(typeof checkForAppUpdate === 'function'){
+      checkForAppUpdate();
+    }
   }
 });
 
