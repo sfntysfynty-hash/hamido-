@@ -498,13 +498,44 @@ var DB = {
     3: { products: [], sales: [], returns: [], expenses: [] }
   }
 };
+/* ============================================================
+   حفظ قوي متعدد الطبقات — لا تفقد بياناتك أبداً
+   ============================================================ */
 try {
+  /* المحاولة 1: من المفتاح الرئيسي */
   var saved = localStorage.getItem('hamidou_v4');
   if(saved){
     var parsed = JSON.parse(saved);
-    if(parsed && parsed.branches) DB = parsed;
+    if(parsed && parsed.branches && parsed.branches.length > 0){
+      DB = parsed;
+      console.log('✅ تم تحميل البيانات من المفتاح الرئيسي');
+    }
+  } else {
+    /* المحاولة 2: من النسخة الاحتياطية التلقائية */
+    var backup = localStorage.getItem('hamidou_auto_backup');
+    if(backup){
+      var snap = JSON.parse(backup);
+      if(snap && snap.data && snap.data.branches){
+        DB = snap.data;
+        console.log('✅ تم تحميل البيانات من النسخة الاحتياطية');
+      }
+    }
   }
-} catch(e) {}
+
+  /* المحاولة 3: من نسخة احتياطية ثانية (احتياط للاحتياط) */
+  if(!DB || !DB.branches || DB.branches.length === 0){
+    var backup2 = localStorage.getItem('hamidou_backup_2');
+    if(backup2){
+      var snap2 = JSON.parse(backup2);
+      if(snap2 && snap2.branches){
+        DB = snap2;
+        console.log('✅ تم تحميل البيانات من النسخة الاحتياطية الثانية');
+      }
+    }
+  }
+} catch(e) {
+  console.log('⚠️ خطأ في تحميل البيانات:', e.message);
+}
 DB.branches.forEach(function(b){
   if(!DB.data[b.id]) DB.data[b.id] = { products: [], sales: [], returns: [], expenses: [], customers: [], payments: [], manualDebts: [], suppliers: [], purchases: [], supplierPayments: [] };
   ['products','sales','returns','expenses','customers','payments','manualDebts','suppliers','purchases','supplierPayments'].forEach(function(k){
@@ -525,7 +556,21 @@ var cb = null, CUR = '$';
 function $(id){ return document.getElementById(id); }
 function gd(){ return cb ? DB.data[cb.id] : null; }
 function sv(){
-  try { localStorage.setItem('hamidou_v4', JSON.stringify(DB)); } catch(e){}
+  var json = '';
+  try { json = JSON.stringify(DB); } catch(e){ return; }
+
+  /* حفظ في 3 أماكن لضمان الأمان */
+  try { localStorage.setItem('hamidou_v4', json); } catch(e){}
+  try { localStorage.setItem('hamidou_backup_2', json); } catch(e){}
+  try {
+    localStorage.setItem('hamidou_auto_backup', JSON.stringify({
+      date: new Date().toISOString(),
+      data: DB
+    }));
+  } catch(e){}
+
+  /* عرض الوقت في Console للتشخيص */
+  try { console.log('💾 حفظ - ' + new Date().toLocaleTimeString('ar-EG')); } catch(e){}
 }
 function fm(n){ return (parseFloat(n) || 0).toFixed(2); }
 function cs(){ return CUR === 'SYP' ? 'ل.س' : CUR; }
@@ -541,6 +586,60 @@ function toggleTheme(){
   try { localStorage.setItem('theme', isLight ? 'light' : 'dark'); } catch(e){}
   var tb = $('themeBtn');
   if(tb) tb.textContent = isLight ? '🌙' : '☀️';
+}
+/* ============================================================
+   حفظ تلقائي متعدد الطبقات
+   ============================================================ */
+
+/* 1) حفظ كل 30 ثانية */
+setInterval(function(){
+  if(cb && DB && DB.branches){ 
+    sv();
+  }
+}, 30 * 1000);
+
+/* 2) حفظ عند كل كتابة في localStorage */
+var _originalSetItem = localStorage.setItem.bind(localStorage);
+/* لا نستخدم هذا - الحفظ يتم عبر sv() */
+
+/* 3) حفظ عند مغادرة الصفحة */
+window.addEventListener('beforeunload', function(){
+  try {
+    if(DB && DB.branches){
+      localStorage.setItem('hamidou_v4', JSON.stringify(DB));
+      localStorage.setItem('hamidou_backup_2', JSON.stringify(DB));
+    }
+  } catch(e){}
+});
+
+/* 4) حفظ عند إخفاء الصفحة (تبديل تطبيقات الجوال) */
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'hidden'){
+    try {
+      if(DB && DB.branches){
+        localStorage.setItem('hamidou_v4', JSON.stringify(DB));
+        localStorage.setItem('hamidou_backup_2', JSON.stringify(DB));
+      }
+    } catch(e){}
+  }
+});
+
+/* 5) حماية إضافية: إذا لم تكن هناك بيانات، لا تحفظ نسخة فارغة فوق القديمة */
+function safeSave(){
+  try {
+    var current = localStorage.getItem('hamidou_v4');
+    var currentSize = current ? current.length : 0;
+    var newJson = JSON.stringify(DB);
+    
+    /* لا تحفظ إذا كانت البيانات الجديدة أصغر بكثير (قد تكون فارغة بالخطأ) */
+    if(newJson.length < currentSize * 0.5 && currentSize > 500){
+      console.log('⚠️ تم منع حفظ بيانات أقل من النصف');
+      return;
+    }
+    
+    localStorage.setItem('hamidou_v4', newJson);
+    localStorage.setItem('hamidou_backup_2', newJson);
+  } catch(e){}
 }
 function applyTheme(){
   var saved = 'dark';
