@@ -1686,7 +1686,7 @@ function rBranches(pc){
   h += '<div class="card"><h3>➕ إضافة فرع</h3>'+
     '<input id="branchNameInput" placeholder="اسم الفرع" style="width:100%;padding:11px;background:rgba(0,0,0,0.35);border:1.5px solid rgba(212,175,55,0.3);border-radius:10px;color:#fff;font-size:14px;outline:none">'+
     '<input id="br_user" placeholder="اسم المستخدم (لاتيني)" style="width:100%;padding:11px;background:rgba(0,0,0,0.35);border:1.5px solid rgba(212,175,55,0.3);border-radius:10px;color:#fff;font-size:14px;outline:none;margin-top:6px">'+
-    '<input id="br_pass" placeholder="كلمة المرور" style="width:100%;padding:11px;background:rgba(0,0,0,0.35);border:1.5px solid rgba(212,175,55,0.3);border-radius:10px;color:#fff;font-size:14px;outline:none;margin-top:6px">'+
+
     '<button class="btn-gold" id="btnAddBr" type="button">💾 إنشاء</button></div>';
 
   pc.innerHTML = h;
@@ -1722,7 +1722,7 @@ function addBranch(){
     id: nid,
     name: n,
     username: un,
-    pass: p,
+    
     isMain: false,
     parentId: main.id
   });
@@ -1747,7 +1747,7 @@ function editB(id){
   var inputs = [
     { label:'الاسم', value: b.name },
     { label:'اسم المستخدم', value: curUser },
-    { label:'كلمة المرور', value: b.pass }
+
   ];
 
   mM('تعديل الفرع', inputs, function(v){
@@ -1988,7 +1988,17 @@ function rBackup(pc){
   if(btnRestore) btnRestore.onclick = restoreAutoBackup;
 }
 function exportData(){
-  var dataStr = JSON.stringify(DB, null, 2);
+  /* === نسخة نظيفة بدون كلمات المرور === */
+  var DB_clean = JSON.parse(JSON.stringify(DB));
+
+  /* احذف pass من كل الفروع */
+  if(DB_clean.branches && DB_clean.branches.length){
+    DB_clean.branches.forEach(function(b){
+      delete b.pass;
+    });
+  }
+
+  var dataStr = JSON.stringify(DB_clean, null, 2);
   var blob = new Blob([dataStr], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -2000,8 +2010,8 @@ function exportData(){
   URL.revokeObjectURL(url);
   var st = document.getElementById('backupStatus');
   if(st) st.textContent = '✅ تم تصدير البيانات';
-    try { localStorage.setItem('last_export_date', getTodayStr()); } catch(e){}
-  if(st) st.textContent = '✅ تم تصدير البيانات — احفظ الملف في مكان آمن!';
+  try { localStorage.setItem('last_export_date', getTodayStr()); } catch(e){}
+  if(st) st.textContent = '✅ تم تصدير البيانات (بدون كلمات المرور)';
 }
 function importData(e){
   var file = e.target.files[0];
