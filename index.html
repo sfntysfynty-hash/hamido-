@@ -776,7 +776,14 @@ function showUpdateBanner(newHash){
     banner.innerHTML = '⏳ جاري التحديث... لا تغلق التطبيق';
     banner.style.background = '#0f6d5f';
 
-    /* 1) احفظ كل شيء */
+    /* ✅ 1) حدّث البصمة أولاً — قبل أي شيء */
+    try {
+      localStorage.setItem('hamidou_index_hash', newHash);
+      CURRENT_INDEX_HASH = newHash;
+      console.log('✅ تم تحديث بصمة الملف إلى: ' + newHash);
+    } catch(e){}
+
+    /* ✅ 2) احفظ كل البيانات */
     try { sv(); } catch(e){}
     try {
       if(DB && DB.branches){
@@ -785,30 +792,39 @@ function showUpdateBanner(newHash){
       }
     } catch(e){}
 
-    /* 2) أعد التحميل بعد ثانية */
+    /* ✅ 3) احذف كل الكاش و Service Worker */
     setTimeout(function(){
-      try {
-        /* احذف الكاش */
-        if('caches' in window){
+      var tasks = [];
+
+      /* احذف Cache Storage */
+      if('caches' in window){
+        tasks.push(
           caches.keys().then(function(names){
-            names.forEach(function(name){ caches.delete(name); });
-          });
-        }
-        /* احذف service worker */
-        if('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations){
-          navigator.serviceWorker.getRegistrations().then(function(regs){
-            regs.forEach(function(r){ r.unregister(); });
-            setTimeout(function(){
-              location.reload();
-            }, 500);
-          });
-        } else {
-          location.reload();
-        }
-      } catch(e){
-        location.reload();
+            return Promise.all(names.map(function(name){
+              return caches.delete(name);
+            }));
+          })
+        );
       }
-    }, 1000);
+
+      /* احذف Service Worker */
+      if('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations){
+        tasks.push(
+          navigator.serviceWorker.getRegistrations().then(function(regs){
+            return Promise.all(regs.map(function(r){ return r.unregister(); }));
+          })
+        );
+      }
+
+      /* بعد إتمام كل المهام → أعد التحميل */
+      Promise.all(tasks).then(function(){
+        setTimeout(function(){
+          location.reload();
+        }, 300);
+      }).catch(function(){
+        location.reload();
+      });
+    }, 500);
   };
   document.body.appendChild(banner);
 }
